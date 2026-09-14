@@ -1,0 +1,4 @@
+.build/
+Tassel.app/
+Scripts/AppIcon.iconset/
+.DS_Store
