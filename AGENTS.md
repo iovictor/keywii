@@ -325,6 +325,20 @@ vice versa. Don't collapse these two concerns.
   All/Undo/Redo) purely so `performKeyEquivalent` has something to
   match — don't remove it even though the menu bar it produces is
   mostly empty/unused visually.
+- **`NSEvent.addLocalMonitorForEvents` installs an app-wide monitor, not
+  a window-scoped one.** `EditorWindowController` originally removed its
+  Esc-key monitor only right before installing a new one (on the next
+  `show()`), never when the window actually closed — and closing via the
+  native traffic-light button bypasses its own `closeWindow()` entirely,
+  so that path never ran anyway. The leaked monitor kept intercepting
+  every Esc keydown *app-wide* afterward and swallowing it (calling a
+  no-op `closeWindow()`), which silently broke the shelf's own
+  Esc-to-dismiss (`OverlayPanel`'s separate Esc monitor) the moment "Edit
+  Layouts" or "Settings" had been opened once. Fixed by making
+  `EditorWindowController` an `NSWindowDelegate` and removing the monitor
+  in `windowWillClose`, which fires for every close path. Any future
+  per-window local event monitor needs the same window-close cleanup —
+  a `show()`-time `removeEscMonitor()` call is not enough on its own.
 - **Sample seed data ported from `corne-v4-visualizer/data.json` used
   the wrong slot ID digit order** (`"{row}{column}"` from the source vs
   this project's `"{column}{row}"`) — see `CorneV4Geometry`'s and

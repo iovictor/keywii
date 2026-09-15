@@ -11,7 +11,7 @@ import HotKey
 ///
 /// One instance is reused for both — its content view is simply swapped
 /// per `show(title:content:)` call.
-final class EditorWindowController: NSWindowController {
+final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var escMonitor: Any?
 
     /// Consulted by the Esc monitor before it closes the window — content
@@ -29,6 +29,20 @@ final class EditorWindowController: NSWindowController {
         )
         window.isReleasedWhenClosed = false
         self.init(window: window)
+        window.delegate = self
+    }
+
+    /// `NSEvent.addLocalMonitorForEvents` installs an app-wide monitor,
+    /// not a window-scoped one — leaving it armed after this window
+    /// closes means it keeps intercepting every Esc keydown anywhere in
+    /// the app afterward (calling a no-op `closeWindow()` here instead of
+    /// letting the event through), which was confirmed as the cause of
+    /// the shelf's own Esc-to-dismiss silently breaking after "Edit
+    /// Layouts"/"Settings" had been opened once. `windowWillClose` fires
+    /// for every close path (the native traffic-light button included,
+    /// which bypasses `closeWindow()` entirely), so remove it there.
+    func windowWillClose(_ notification: Notification) {
+        removeEscMonitor()
     }
 
     func show(title: String, content: AnyView) {
