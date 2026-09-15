@@ -1,10 +1,11 @@
 #!/usr/bin/env swift
 
-// Draws the app icon — a stylized kiwi bird (a play on "KeyWii") with a
-// tech/circuit accent (a glowing LED eye, a circuit trace along its back,
-// and faint PCB traces in the background corners), on the same dark
-// rounded-square chrome as the panel itself, at every size macOS's
-// .iconset format requires. `iconutil` then compiles them into an .icns.
+// Draws the app icon — a sliced kiwi fruit (the pun in "KeyWii") with a
+// tech/circuit accent (two seeds swapped for glowing LEDs, a circuit
+// trace arcing across the flesh, and faint PCB traces in the background
+// corners), on the same dark rounded-square chrome as the panel itself,
+// at every size macOS's .iconset format requires. `iconutil` then
+// compiles them into an .icns.
 //
 // Run via `swift Scripts/generate_icon.swift`, then:
 //   iconutil -c icns Scripts/AppIcon.iconset -o Resources/AppIcon.icns
@@ -95,103 +96,112 @@ func draw(size: Int) -> CGImage? {
     ctx.addPath(bgPath)
     ctx.clip()
 
-    // Kiwi body: two overlapping filled ellipses (a rounder lower body,
-    // a smaller head at the upper-left) painted the same color so they
-    // read as one continuous silhouette with no visible seam.
-    let cx = s * 0.52
-    let bodyCenter = CGPoint(x: cx, y: s * 0.42)
-    let bodyRadiusX = s * 0.24
-    let bodyRadiusY = s * 0.27
-    let headCenter = CGPoint(x: cx - bodyRadiusX * 0.55, y: s * 0.66)
-    let headRadius = s * 0.115
-
-    let bodyColors = [
-        CGColor(red: 0.78, green: 0.52, blue: 0.28, alpha: 1.0),
-        CGColor(red: 0.58, green: 0.36, blue: 0.18, alpha: 1.0),
-    ] as CFArray
+    let cx = s * 0.5
+    let cy = s * 0.5
+    let center = CGPoint(x: cx, y: cy)
 
     func fillEllipse(center: CGPoint, radiusX: CGFloat, radiusY: CGFloat) {
         let ellipseRect = CGRect(x: center.x - radiusX, y: center.y - radiusY, width: radiusX * 2, height: radiusY * 2)
         ctx.addEllipse(in: ellipseRect)
     }
 
+    // Fuzzy brown skin: a ring, stippled with small dots (deterministic,
+    // sine-jittered rather than random, so the icon renders identically
+    // every run) to read as fuzz rather than a flat ring at larger sizes.
+    let skinRadius = s * 0.37
+    let fleshRadius = s * 0.325
+    ctx.setFillColor(CGColor(red: 0.45, green: 0.33, blue: 0.16, alpha: 1.0))
+    fillEllipse(center: center, radiusX: skinRadius, radiusY: skinRadius)
+    ctx.fillPath()
+
+    let fuzzColor = CGColor(red: 0.58, green: 0.44, blue: 0.24, alpha: 0.8)
+    let fuzzRingRadius = (skinRadius + fleshRadius) / 2
+    let fuzzDots = 40
+    for i in 0..<fuzzDots {
+        let angle = (CGFloat(i) / CGFloat(fuzzDots)) * .pi * 2
+        let jitter = sin(angle * 7) * (skinRadius - fleshRadius) * 0.18
+        let point = CGPoint(
+            x: cx + cos(angle) * (fuzzRingRadius + jitter),
+            y: cy + sin(angle) * (fuzzRingRadius + jitter)
+        )
+        ctx.setFillColor(fuzzColor)
+        fillEllipse(center: point, radiusX: s * 0.008, radiusY: s * 0.008)
+        ctx.fillPath()
+    }
+
+    // Bright green flesh, radially shaded so it reads as fruit rather
+    // than a flat disc.
+    let fleshColors = [
+        CGColor(red: 0.72, green: 0.85, blue: 0.32, alpha: 1.0),
+        CGColor(red: 0.48, green: 0.68, blue: 0.20, alpha: 1.0),
+    ] as CFArray
     ctx.saveGState()
-    let bodyPath = CGMutablePath()
-    bodyPath.addEllipse(in: CGRect(x: bodyCenter.x - bodyRadiusX, y: bodyCenter.y - bodyRadiusY, width: bodyRadiusX * 2, height: bodyRadiusY * 2))
-    bodyPath.addEllipse(in: CGRect(x: headCenter.x - headRadius, y: headCenter.y - headRadius, width: headRadius * 2, height: headRadius * 2))
-    ctx.addPath(bodyPath)
+    fillEllipse(center: center, radiusX: fleshRadius, radiusY: fleshRadius)
     ctx.clip()
-    if let gradient = CGGradient(colorsSpace: colorSpace, colors: bodyColors, locations: [0, 1]) {
-        ctx.drawLinearGradient(
+    if let gradient = CGGradient(colorsSpace: colorSpace, colors: fleshColors, locations: [0, 1]) {
+        ctx.drawRadialGradient(
             gradient,
-            start: CGPoint(x: cx, y: s * 0.78),
-            end: CGPoint(x: cx, y: s * 0.16),
+            startCenter: center, startRadius: 0,
+            endCenter: center, endRadius: fleshRadius,
             options: []
         )
     }
     ctx.restoreGState()
 
-    // Beak: a thin tapered sliver extending forward from the head.
-    let beakBaseTop = CGPoint(x: headCenter.x - headRadius * 0.3, y: headCenter.y + headRadius * 0.35)
-    let beakBaseBottom = CGPoint(x: headCenter.x - headRadius * 0.3, y: headCenter.y - headRadius * 0.25)
-    let beakTip = CGPoint(x: headCenter.x - bodyRadiusX * 1.55, y: headCenter.y - headRadius * 0.05)
-    let beakPath = CGMutablePath()
-    beakPath.move(to: beakBaseTop)
-    beakPath.addLine(to: beakTip)
-    beakPath.addLine(to: beakBaseBottom)
-    beakPath.closeSubpath()
-    ctx.setFillColor(CGColor(red: 0.42, green: 0.26, blue: 0.14, alpha: 1.0))
-    ctx.addPath(beakPath)
+    // Pale core at the center.
+    let coreRadius = s * 0.09
+    ctx.setFillColor(CGColor(red: 0.94, green: 0.92, blue: 0.78, alpha: 1.0))
+    fillEllipse(center: center, radiusX: coreRadius, radiusY: coreRadius)
     ctx.fillPath()
 
-    // Legs: short dark lines with tiny oval feet.
-    let legColor = CGColor(red: 0.32, green: 0.20, blue: 0.11, alpha: 1.0)
-    ctx.setStrokeColor(legColor)
-    ctx.setLineWidth(s * 0.03)
-    ctx.setLineCap(.round)
-    for legX in [cx - bodyRadiusX * 0.35, cx + bodyRadiusX * 0.45] {
-        let top = CGPoint(x: legX, y: bodyCenter.y - bodyRadiusY * 0.75)
-        let bottom = CGPoint(x: legX, y: bodyCenter.y - bodyRadiusY * 1.05)
-        ctx.move(to: top)
-        ctx.addLine(to: bottom)
-        ctx.strokePath()
-        ctx.setFillColor(legColor)
-        fillEllipse(center: CGPoint(x: legX + s * 0.02, y: bottom.y - s * 0.005), radiusX: s * 0.03, radiusY: s * 0.014)
-        ctx.fillPath()
+    // Seeds: a ring of small dark ellipses pointing radially outward from
+    // the core, like a real kiwi slice — with two on the horizontal axis
+    // swapped for glowing cyan LEDs, the tech half of the pun.
+    let seedCount = 14
+    let seedRingRadius = (coreRadius + fleshRadius) / 2
+    let seedColor = CGColor(red: 0.08, green: 0.06, blue: 0.03, alpha: 1.0)
+    let ledColor = CGColor(red: 0.55, green: 0.92, blue: 1.0, alpha: 1.0)
+    let ledGlow = CGColor(red: 0.45, green: 0.9, blue: 1.0, alpha: 0.35)
+
+    for i in 0..<seedCount {
+        let angle = (CGFloat(i) / CGFloat(seedCount)) * .pi * 2
+        let point = CGPoint(x: cx + cos(angle) * seedRingRadius, y: cy + sin(angle) * seedRingRadius)
+        let isLED = i == 0 || i == seedCount / 2
+
+        ctx.saveGState()
+        ctx.translateBy(x: point.x, y: point.y)
+        ctx.rotate(by: angle)
+
+        if isLED {
+            ctx.setFillColor(ledGlow)
+            fillEllipse(center: .zero, radiusX: s * 0.028, radiusY: s * 0.028)
+            ctx.fillPath()
+            ctx.setFillColor(ledColor)
+            fillEllipse(center: .zero, radiusX: s * 0.014, radiusY: s * 0.014)
+            ctx.fillPath()
+        } else {
+            ctx.setFillColor(seedColor)
+            fillEllipse(center: .zero, radiusX: s * 0.022, radiusY: s * 0.009)
+            ctx.fillPath()
+        }
+        ctx.restoreGState()
     }
 
-    // Circuit trace along the back: a thin glowing line with two small
-    // nodes, tracing the body's upper curve — the one detail that ties
-    // the "tech" half of the name directly onto the bird itself.
+    // Circuit trace arcing across the flesh, connecting the two LED
+    // seeds — the one detail that ties the "tech" half of the name
+    // directly onto the fruit itself.
+    let ledA = CGPoint(x: cx + seedRingRadius, y: cy)
+    let ledB = CGPoint(x: cx - seedRingRadius, y: cy)
     let tracePath = CGMutablePath()
-    tracePath.move(to: CGPoint(x: cx - bodyRadiusX * 0.7, y: bodyCenter.y + bodyRadiusY * 0.55))
-    tracePath.addQuadCurve(
-        to: CGPoint(x: cx + bodyRadiusX * 0.75, y: bodyCenter.y + bodyRadiusY * 0.35),
-        control: CGPoint(x: cx + bodyRadiusX * 0.1, y: bodyCenter.y + bodyRadiusY * 0.95)
-    )
-    ctx.setStrokeColor(CGColor(red: 0.55, green: 0.92, blue: 1.0, alpha: 0.85))
-    ctx.setLineWidth(max(1, s * 0.012))
+    tracePath.move(to: ledA)
+    tracePath.addQuadCurve(to: ledB, control: CGPoint(x: cx, y: cy + seedRingRadius * 1.1))
+    ctx.setStrokeColor(CGColor(red: 0.55, green: 0.92, blue: 1.0, alpha: 0.8))
+    ctx.setLineWidth(max(1, s * 0.01))
     ctx.setLineCap(.round)
     ctx.addPath(tracePath)
     ctx.strokePath()
-    for point in [
-        CGPoint(x: cx - bodyRadiusX * 0.7, y: bodyCenter.y + bodyRadiusY * 0.55),
-        CGPoint(x: cx + bodyRadiusX * 0.2, y: bodyCenter.y + bodyRadiusY * 0.78),
-        CGPoint(x: cx + bodyRadiusX * 0.75, y: bodyCenter.y + bodyRadiusY * 0.35),
-    ] {
-        ctx.setFillColor(CGColor(red: 0.55, green: 0.92, blue: 1.0, alpha: 0.95))
-        fillEllipse(center: point, radiusX: s * 0.018, radiusY: s * 0.018)
-        ctx.fillPath()
-    }
-
-    // LED eye: a small glowing cyan dot instead of a plain bead — the
-    // other half of the tech accent.
-    let eyeCenter = CGPoint(x: headCenter.x + headRadius * 0.15, y: headCenter.y + headRadius * 0.1)
-    ctx.setFillColor(CGColor(red: 0.45, green: 0.9, blue: 1.0, alpha: 0.35))
-    fillEllipse(center: eyeCenter, radiusX: headRadius * 0.42, radiusY: headRadius * 0.42)
-    ctx.fillPath()
-    ctx.setFillColor(CGColor(red: 0.65, green: 0.97, blue: 1.0, alpha: 1.0))
-    fillEllipse(center: eyeCenter, radiusX: headRadius * 0.22, radiusY: headRadius * 0.22)
+    ctx.setFillColor(ledColor)
+    fillEllipse(center: CGPoint(x: cx, y: cy + seedRingRadius * 0.85), radiusX: s * 0.012, radiusY: s * 0.012)
     ctx.fillPath()
 
     return ctx.makeImage()
