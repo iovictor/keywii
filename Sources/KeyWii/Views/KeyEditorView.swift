@@ -2,29 +2,15 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Inline editor for one key's content, tag, and background color.
-///
-/// This is an in-panel overlay, not a `.sheet`/separate window: a real
-/// child window becoming key would make `OverlayPanel` resign key and
-/// auto-hide out from under the editor (see `OverlayPanel.resignKey`).
+/// Editor for one key's content, tag, and background color. Docked along
+/// the bottom of `LayoutEditorView` — a real, normally-activating window,
+/// which is why `ColorPicker` and the image file picker just work here
+/// with zero special-casing (see AGENTS.md's "Editor architecture").
 struct KeyEditorView: View {
     @Binding var key: KeyLayout
-    let onClose: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(key.slotID)
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: onClose) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
             ContentFieldEditor(title: "Primary", content: primaryBinding)
 
             SecondaryFieldEditor(secondary: $key.secondary, primaryIsEmpty: key.primary.isEmpty)
@@ -37,11 +23,6 @@ struct KeyEditorView: View {
 
             ColorPicker("Background", selection: colorBinding, supportsOpacity: false)
         }
-        .padding(14)
-        .frame(width: 260)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(radius: 16)
     }
 
     /// Setting primary empty clears secondary too — secondary is never
@@ -86,20 +67,19 @@ private struct ContentFieldEditor: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption).foregroundStyle(.secondary)
 
-            Picker("", selection: Binding(
-                get: { kind },
-                set: { newKind in
-                    switch newKind {
-                    case .text: content = .text("")
-                    case .image: content = .image(Data())
-                    }
-                }
-            )) {
-                Text("Text").tag(Kind.text)
-                Text("Image").tag(Kind.image)
+            // A `Picker` with `.pickerStyle(.segmented)` driven by a custom
+            // derived `Binding` (rather than a plain `@State`) was
+            // confirmed unreliable here — clicking "Image" fired the
+            // binding's setter repeatedly but the selection kept snapping
+            // back to "Text" without ever visibly switching. Plain
+            // buttons sidestep whatever internal reconciliation the
+            // segmented Picker style was doing.
+            HStack(spacing: 0) {
+                kindButton(.text, label: "Text")
+                kindButton(.image, label: "Image")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            .background(Color.gray.opacity(0.2))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
 
             switch content {
             case .text(let str):
@@ -109,6 +89,30 @@ private struct ContentFieldEditor: View {
                 ImagePickerRow(data: data) { content = .image($0) }
             }
         }
+    }
+
+    @ViewBuilder
+    private func kindButton(_ target: Kind, label: String) -> some View {
+        let isSelected = kind == target
+        Button {
+            switch target {
+            case .text: content = .text("")
+            case .image: content = .image(Data())
+            }
+        } label: {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(isSelected ? Color.accentColor : Color.clear)
+                .foregroundStyle(isSelected ? .white : .primary)
+                // `.buttonStyle(.plain)` otherwise leaves only the text
+                // glyphs themselves clickable, not the surrounding
+                // padding/background — confirmed as exactly why this
+                // looked broken ("have to click the text itself").
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -136,12 +140,12 @@ private struct SecondaryFieldEditor: View {
     }
 }
 
-/// Thumbnail + "Choose…" button for picking an image file from disk.
+/// Thumbnail + "Choose Image…"/"From App…" buttons for picking a key's
+/// image content, either an arbitrary file from disk or an installed
+/// app's own icon.
 private struct ImagePickerRow: View {
     let data: Data
     let onPick: (Data) -> Void
-
-    @Environment(\.overlayPanel) private var overlayPanel
 
     var body: some View {
         HStack(spacing: 8) {
@@ -154,18 +158,13 @@ private struct ImagePickerRow: View {
             }
             .frame(width: 28, height: 28)
 
-            Button("Choose…", action: pickImage)
+            Button("Choose Image…", action: pickImage)
+            Button("From App…", action: pickAppIcon)
             Spacer()
         }
     }
 
     private func pickImage() {
-        // The open panel becomes its own key window; suppress our panel's
-        // resignKey auto-hide for the duration so it doesn't slide away
-        // mid-pick.
-        overlayPanel?.suppressAutoHide = true
-        defer { overlayPanel?.suppressAutoHide = false }
-
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg, .tiff, .gif, .bmp, .heic]
         panel.allowsMultipleSelection = false
@@ -175,5 +174,41 @@ private struct ImagePickerRow: View {
         if panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) {
             onPick(data)
         }
+    }
+
+    /// Lets the user browse to any `.app` bundle and uses `NSWorkspace`'s
+    /// own icon lookup for it — the same icon macOS shows in Finder/Dock
+    /// for that app, at whatever resolution it registered (so a Retina
+    /// icon comes back sharp). Re-rendered into a fixed-size PNG since
+    /// `KeyContent.image` stores flat `Data`, not an `NSImage`/icon
+    /// reference — the source app being moved, renamed, or removed later
+    /// doesn't affect an icon already captured this way.
+    private func pickAppIcon() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.prompt = "Use Icon"
+        panel.message = "Choose an app to use its icon"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        if let data = Self.pngData(from: icon, side: 128) {
+            onPick(data)
+        }
+    }
+
+    private static func pngData(from image: NSImage, side: CGFloat) -> Data? {
+        let size = NSSize(width: side, height: side)
+        let resized = NSImage(size: size)
+        resized.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
+        resized.unlockFocus()
+
+        guard let tiff = resized.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
     }
 }

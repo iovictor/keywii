@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Tassel",
+    name: "KeyWii",
     platforms: [
         .macOS(.v13)
     ],
@@ -12,9 +12,9 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "Tassel",
+            name: "KeyWii",
             dependencies: ["HotKey"],
-            path: "Sources/Tassel"
+            path: "Sources/KeyWii"
         )
     ]
 )

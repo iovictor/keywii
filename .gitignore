@@ -1,4 +1,5 @@
 .build/
-Tassel.app/
+KeyWii.app/
 Scripts/AppIcon.iconset/
 .DS_Store
+.claude/

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Builds Tassel.app: a release binary wrapped in a real, double-clickable
+# Builds KeyWii.app: a release binary wrapped in a real, double-clickable
 # .app bundle, ad-hoc codesigned (no paid Apple Developer account needed,
 # per CLAUDE.md's non-negotiable constraints).
 #
 # Usage: Scripts/build_app.sh [-o output_dir]
-# Output defaults to the repo root: ./Tassel.app
+# Output defaults to the repo root: ./KeyWii.app
 
 set -euo pipefail
 
@@ -19,9 +19,9 @@ while getopts "o:" opt; do
     esac
 done
 
-APP_NAME="Tassel"
+APP_NAME="KeyWii"
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
-BUNDLE_ID="com.victor.tassel"
+BUNDLE_ID="com.victor.keywii"
 
 echo "==> Building release binary..."
 swift build -c release

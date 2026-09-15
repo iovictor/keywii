@@ -9,6 +9,15 @@ import Foundation
 /// This shape is independent of any layout's data — a `CorneLayout` always
 /// has one `KeyLayout` per slot here (see `CorneLayout.corneV4Base`), so the
 /// board renders in full even where a slot's content is empty.
+///
+/// **Slot ID convention: `"L{column}{row}"` / `"R{column}{row}"`** — column
+/// digit first, then row (thumbs are just `"LT{index}"`/`"RT{index}"`, no
+/// ambiguity there). This is the *opposite* digit order from the source
+/// `corne-v4-visualizer/data.json`, which uses `"{row}{column}"` — e.g. its
+/// "L03" is row 0, column 3, while here that same physical key is "L30".
+/// Copying source IDs verbatim without swapping the digits was a real bug
+/// (see `CorneV4SampleData.swift`'s doc comment for exactly what it looked
+/// like) — double check this when porting any more reference data in.
 enum CorneV4Geometry {
     static let keySize: CGFloat = 52
     /// Height of the innermost thumb key only — source CSS's `.key.thumb`

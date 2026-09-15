@@ -4,17 +4,18 @@ import SwiftUI
 /// A borderless, non-activating floating panel that slides up from the
 /// bottom third of the screen when shown, and slides back down when it
 /// loses key status or Esc is pressed.
+///
+/// Pure display — no editing lives here (see AGENTS.md's "Editor
+/// architecture" section). Because this panel has no reason to ever host
+/// a native modal (`NSColorPanel`, `NSOpenPanel`, ...) or coordinate with
+/// a second window, its hide-on-blur behavior can stay this simple.
 final class OverlayPanel: NSPanel {
     private var escMonitor: Any?
     private var isAnimating = false
+    private var hostingView: NSHostingView<PanelContentView>!
 
-    /// Set while a native modal (e.g. the image-file picker from the key
-    /// editor) is on screen, so `resignKey` doesn't auto-hide the panel out
-    /// from under it. See `KeyEditorEnvironment`.
-    var suppressAutoHide = false
-
-    convenience init(store: DocumentStore) {
-        let hostingView = NSHostingView(rootView: AnyView(PanelContentView(store: store)))
+    convenience init(store: DocumentStore, appearance: ShelfAppearanceStore) {
+        let hostingView = NSHostingView(rootView: PanelContentView(store: store, appearance: appearance))
         hostingView.frame = CGRect(x: 0, y: 0, width: 720, height: 320)
 
         self.init(
@@ -24,12 +25,28 @@ final class OverlayPanel: NSPanel {
             defer: false
         )
 
+        self.hostingView = hostingView
         self.contentView = hostingView
         configureAppearance()
+    }
 
-        // Re-set now that `self` exists, so the editor can reach back to
-        // this panel's `suppressAutoHide`.
-        hostingView.rootView = AnyView(PanelContentView(store: store).environment(\.overlayPanel, self))
+    /// Window size that exactly fits the current shelf content, queried
+    /// fresh from SwiftUI itself (`NSHostingView.fittingSize`) rather than
+    /// hand-replicated in AppKit — a previous manual width/height estimate
+    /// (mirroring `PanelContentView`'s grid math by hand) drifted out of
+    /// sync with the real layout and clipped content. `fittingSize`
+    /// reflects the *current* `store.document` state (checking/unchecking
+    /// a layout in the editor updates it, even while this window is
+    /// off-screen — the hosting view's SwiftUI subscriptions stay live),
+    /// so this needs no manual recomputation when that changes.
+    private func contentSize(on screen: NSScreen) -> CGSize {
+        let fitting = hostingView.fittingSize
+        let visible = screen.visibleFrame
+        // `PanelContentView` sizes itself to fit its own content (see its
+        // `cardScale`), not a screen-relative target — this clamp is just a
+        // safety net for screens too small/short to fit that natural size,
+        // with enough margin to avoid ever touching the screen edges.
+        return CGSize(width: min(fitting.width, visible.width - 24), height: min(fitting.height, visible.height - 80))
     }
 
     private func configureAppearance() {
@@ -53,21 +70,25 @@ final class OverlayPanel: NSPanel {
     /// (below the screen edge) and shown (settled) variants.
     private func hiddenFrame(on screen: NSScreen) -> CGRect {
         let visible = screen.visibleFrame
-        let width: CGFloat = min(760, visible.width - 80)
-        let height: CGFloat = min(360, visible.height / 3)
-        let x = visible.midX - width / 2
+        let size = contentSize(on: screen)
+        let x = visible.midX - size.width / 2
         // Parked just below the visible area so the slide-up is seamless.
-        let y = visible.minY - height - 20
-        return CGRect(x: x, y: y, width: width, height: height)
+        let y = visible.minY - size.height - 20
+        return CGRect(origin: CGPoint(x: x, y: y), size: size)
     }
 
     private func shownFrame(on screen: NSScreen) -> CGRect {
         let visible = screen.visibleFrame
-        let width: CGFloat = min(760, visible.width - 80)
-        let height: CGFloat = min(360, visible.height / 3)
-        let x = visible.midX - width / 2
-        let y = visible.minY + 24
-        return CGRect(x: x, y: y, width: width, height: height)
+        let size = contentSize(on: screen)
+        let x = visible.midX - size.width / 2
+        // `size.height` already includes `PanelContentView.bottomOverflow`
+        // (it's real SwiftUI content, so `fittingSize` counts it). Parking
+        // the panel exactly that far below the screen's bottom edge pushes
+        // the overflow band — and the corner-radius curve inside it — off
+        // the physical display, leaving a flush, square-bottomed panel on
+        // screen. See `PanelContentView.bottomOverflow`'s doc comment.
+        let y = visible.minY - PanelContentView.bottomOverflow
+        return CGRect(origin: CGPoint(x: x, y: y), size: size)
     }
 
     // MARK: - Show / hide
@@ -112,9 +133,7 @@ final class OverlayPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
-        if !suppressAutoHide {
-            hide()
-        }
+        hide()
     }
 
     private func installEscMonitor() {
@@ -134,19 +153,5 @@ final class OverlayPanel: NSPanel {
             NSEvent.removeMonitor(escMonitor)
             self.escMonitor = nil
         }
-    }
-}
-
-private struct OverlayPanelEnvironmentKey: EnvironmentKey {
-    static let defaultValue: OverlayPanel? = nil
-}
-
-extension EnvironmentValues {
-    /// The panel hosting this view, so a native modal (e.g. an image file
-    /// picker) can suppress the panel's resignKey-triggered auto-hide while
-    /// it's on screen.
-    var overlayPanel: OverlayPanel? {
-        get { self[OverlayPanelEnvironmentKey.self] }
-        set { self[OverlayPanelEnvironmentKey.self] = newValue }
     }
 }
